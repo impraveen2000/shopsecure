@@ -1,0 +1,23 @@
+server:
+  port: 18888
+
+spring:
+  application:
+    name: config-server
+  profiles:
+    active: native          # read configs from the classpath (use 'git' backend in real projects)
+  cloud:
+    config:
+      server:
+        native:
+          search-locations: classpath:/configs
+  security:
+    user:
+      name: ${CONFIG_USER:config}
+      password: ${CONFIG_PASSWORD:config-secret}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

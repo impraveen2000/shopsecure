@@ -1,0 +1,11 @@
+# Configuration that only the order-service receives.
+# Try changing these values and restarting order-service: no rebuild needed.
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      productService:
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s

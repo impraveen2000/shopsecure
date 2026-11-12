@@ -1,0 +1,133 @@
+# Two ways to run:
+#   1) Infrastructure only (run the services from your IDE):   docker compose up -d
+#   2) Everything in Docker:                                   docker compose --profile apps up -d --build
+#
+# Secrets below are DEV defaults. In real deployments use Docker/K8s secrets or a vault.
+
+x-service-env: &service-env
+  CONFIG_SERVER_URL: http://config-server:18888
+  EUREKA_URL: http://eureka:eureka-secret@discovery-server:18761/eureka
+  AUTH_JWKS_URI: http://auth-service:18081/.well-known/jwks.json
+  KAFKA_SERVERS: kafka:29092
+  ZIPKIN_URL: http://zipkin:9411/api/v2/spans
+  DB_USER: shopsecure
+  DB_PASSWORD: shopsecure
+  ORDER_SERVICE_SECRET: order-service-secret
+
+name: shopsecure   # separate compose project: never touches other projects (e.g. nss)
+
+services:
+  # ---------------- Infrastructure ----------------
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: shopsecure
+      POSTGRES_PASSWORD: shopsecure
+      POSTGRES_DB: authdb
+    ports: ["5433:5432"]   # host 5433 to avoid clashing with a local Postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shopsecure"]
+      interval: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6380:6379"]   # host 6380 (6379 is used by another project)
+
+  kafka:
+    image: apache/kafka:3.8.0
+    ports: ["9094:9094"]   # host 9094 (9092 is used by another project)
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,CONTROLLER://0.0.0.0:9093,PLAINTEXT_HOST://0.0.0.0:9094
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+
+  zipkin:
+    image: openzipkin/zipkin:3
+    ports: ["9411:9411"]
+
+  # ---------------- Platform services ----------------
+  config-server:
+    profiles: ["apps"]
+    build: { context: ., args: { SERVICE: config-server } }
+    ports: ["18888:18888"]
+
+  discovery-server:
+    profiles: ["apps"]
+    build: { context: ., args: { SERVICE: discovery-server } }
+    ports: ["18761:18761"]
+
+  # ---------------- Business services ----------------
+  auth-service:
+    profiles: ["apps"]
+    build: { context: ., args: { SERVICE: auth-service } }
+    environment:
+      <<: *service-env
+      DB_URL: jdbc:postgresql://postgres:5432/authdb
+    depends_on:
+      postgres: { condition: service_healthy }
+      discovery-server: { condition: service_started }
+      config-server: { condition: service_started }
+    ports: ["18081:18081"]
+
+  product-service:
+    profiles: ["apps"]
+    build: { context: ., args: { SERVICE: product-service } }
+    environment:
+      <<: *service-env
+      DB_URL: jdbc:postgresql://postgres:5432/productdb
+    depends_on:
+      postgres: { condition: service_healthy }
+      discovery-server: { condition: service_started }
+    ports: ["18082:18082"]
+
+  order-service:
+    profiles: ["apps"]
+    build: { context: ., args: { SERVICE: order-service } }
+    environment:
+      <<: *service-env
+      DB_URL: jdbc:postgresql://postgres:5432/orderdb
+    depends_on:
+      postgres: { condition: service_healthy }
+      discovery-server: { condition: service_started }
+    ports: ["18083:18083"]
+
+  notification-service:
+    profiles: ["apps"]
+    build: { context: ., args: { SERVICE: notification-service } }
+    environment: *service-env
+    depends_on: [kafka, discovery-server]
+    ports: ["18084:18084"]
+
+  api-gateway:
+    profiles: ["apps"]
+    build: { context: ., args: { SERVICE: api-gateway } }
+    environment:
+      <<: *service-env
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      FRONTEND_ORIGIN: http://localhost:3000
+    depends_on: [redis, discovery-server]
+    ports: ["18090:18090"]   # 18xxx range avoids clashes with other local projects
+
+  frontend:
+    profiles: ["apps"]
+    build: ./frontend
+    depends_on: [api-gateway]
+    ports: ["3000:80"]
+
+volumes:
+  pgdata:

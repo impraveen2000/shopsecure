@@ -1,0 +1,68 @@
+### ShopSecure API playground
+### Open in IntelliJ (HTTP Client) or VS Code (REST Client extension).
+### Everything goes through the API Gateway on :18090.
+
+@gateway = http://localhost:18090
+
+### 1. Register a user (weak passwords are rejected with 400)
+POST {{gateway}}/api/auth/register
+Content-Type: application/json
+
+{ "username": "alice", "email": "alice@shopsecure.dev", "password": "Alice@123" }
+
+### 2. Login -> copy "accessToken" from the response into @token below
+###    (the refresh token arrives as an HttpOnly Set-Cookie header)
+POST {{gateway}}/api/auth/login
+Content-Type: application/json
+
+{ "username": "admin", "password": "Admin@123" }
+
+@token = PASTE_ACCESS_TOKEN_HERE
+
+### 3. Who am I?
+GET {{gateway}}/api/auth/me
+Authorization: Bearer {{token}}
+
+### 4. Public: list products (no token needed)
+GET {{gateway}}/api/products?q=key&page=0&size=5&sort=price
+
+### 5. ADMIN: create product (try with a USER token -> 403)
+POST {{gateway}}/api/products
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "name": "USB-C Hub", "description": "7 ports", "price": 1299.00, "stock": 50, "category": "Electronics" }
+
+### 6. USER: place order (only ids + quantities, server decides prices)
+POST {{gateway}}/api/orders
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "items": [ { "productId": 1, "quantity": 2 }, { "productId": 5, "quantity": 1 } ] }
+
+### 7. My orders
+GET {{gateway}}/api/orders/my
+Authorization: Bearer {{token}}
+
+### 8. BLOCKED by the gateway: internal endpoints are never public (expect 401/403)
+POST {{gateway}}/api/products/1/reserve
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "quantity": 1 }
+
+### 9. BLOCKED: service-token endpoint is internal-only
+POST {{gateway}}/api/auth/service-token
+Content-Type: application/json
+
+{ "clientId": "order-service", "clientSecret": "order-service-secret" }
+
+### 10. No token -> 401
+GET {{gateway}}/api/orders/my
+
+### 11. Public keys used to verify JWTs (call auth-service directly)
+GET http://localhost:18081/.well-known/jwks.json
+
+### 12. ADMIN: list users
+GET {{gateway}}/api/auth/admin/users
+Authorization: Bearer {{token}}

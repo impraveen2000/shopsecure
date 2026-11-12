@@ -1,0 +1,25 @@
+server:
+  port: 18761
+
+spring:
+  application:
+    name: discovery-server
+  security:
+    user:
+      name: ${EUREKA_USER:eureka}
+      password: ${EUREKA_PASSWORD:eureka-secret}
+
+eureka:
+  instance:
+    hostname: localhost
+  client:
+    register-with-eureka: false   # the server does not register with itself
+    fetch-registry: false
+  server:
+    enable-self-preservation: false   # handy in development so dead instances disappear quickly
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

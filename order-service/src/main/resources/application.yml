@@ -1,0 +1,84 @@
+server:
+  port: 18083
+
+spring:
+  application:
+    name: order-service
+  config:
+    import: optional:configserver:${CONFIG_SERVER_URL:http://localhost:18888}
+  cloud:
+    config:
+      username: ${CONFIG_USER:config}
+      password: ${CONFIG_PASSWORD:config-secret}
+    openfeign:
+      client:
+        config:
+          default:
+            connect-timeout: 2000
+            read-timeout: 5000
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5433/orderdb}
+    username: ${DB_USER:shopsecure}
+    password: ${DB_PASSWORD:shopsecure}
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+  kafka:
+    bootstrap-servers: ${KAFKA_SERVERS:localhost:9094}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      properties:
+        spring.json.add.type.headers: false
+        max.block.ms: 5000
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://eureka:eureka-secret@localhost:18761/eureka}
+  instance:
+    prefer-ip-address: true
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      productService:
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
+        # Business errors (404 product missing, 409 out of stock) are NOT infrastructure failures
+        ignore-exceptions:
+          - feign.FeignException$NotFound
+          - feign.FeignException$Conflict
+          - feign.FeignException$BadRequest
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,circuitbreakers
+  health:
+    circuitbreakers:
+      enabled: true
+  tracing:
+    sampling:
+      probability: 1.0
+  zipkin:
+    tracing:
+      endpoint: ${ZIPKIN_URL:http://localhost:9411/api/v2/spans}
+
+logging:
+  pattern:
+    level: "%5p [${spring.application.name:},%X{traceId:-},%X{spanId:-}]"
+
+app:
+  jwt:
+    issuer: shopsecure-auth
+    jwks-uri: ${AUTH_JWKS_URI:http://localhost:18081/.well-known/jwks.json}
+  # Credentials this service uses to get its own SERVICE token from auth-service
+  service-auth:
+    client-id: order-service
+    client-secret: ${ORDER_SERVICE_SECRET:order-service-secret}

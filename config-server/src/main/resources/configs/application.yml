@@ -1,0 +1,21 @@
+# Shared configuration served to EVERY service that connects to the config server.
+# Each service also has sensible local defaults so it can still start without the config server.
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: when-authorized
+  tracing:
+    sampling:
+      probability: 1.0      # trace 100% of requests (lower this in production)
+
+logging:
+  pattern:
+    level: "%5p [${spring.application.name:},%X{traceId:-},%X{spanId:-}]"
+
+shopsecure:
+  config-source: "config-server"   # check /actuator/env on a service to see this came from here
